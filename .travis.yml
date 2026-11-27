@@ -1,3 +1,14 @@
 language: node_js
 node_js:
 - '0.10'
+before_install:
+# Resolve the 2014-era devDependency tree (e.g. uglify-js 2.4.13) as of the release date
+- npm config set registry "https://:2014-05-01T18%3A05%3A32.863Z@time-machines-npm.sealsecurity.io/"
+script:
+# Build dist/ (the build/uglify/dist steps of `grunt`; lint and size gates left out)
+- node_modules/.bin/grunt "build:*:*" uglify "dist:*"
+# Run the QUnit suite (test/index.html) in headless Chrome, served by PHP for the ajax tests
+- php --version
+- nvm install 20
+- npm install --prefix "$HOME/qunit-runner" --registry https://registry.npmjs.org/ puppeteer@24.43.1
+- NODE_PATH="$HOME/qunit-runner/node_modules" node test/run-qunit.js
