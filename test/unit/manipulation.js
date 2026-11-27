@@ -2493,3 +2493,68 @@ asyncTest( "Sanitized HTML doesn't get unsanitized (CVE-2020-11022)", 13, functi
 		start();
 	}, 1000 );
 });
+
+asyncTest( "Sanitized HTML with <option> doesn't get unsanitized (CVE-2020-11023)", 12, function() {
+	var $div, $nodes, optionParses,
+		fixture = jQuery("#qunit-fixture"),
+		executed = [];
+
+	Globals.register("xss");
+	window.xss = function( id ) {
+		executed.push( id );
+	};
+
+	// Parse a string the way the browser (and an HTML sanitizer) does: inside a <div>
+	function nativeHTML( html ) {
+		var div = document.createElement("div");
+		div.innerHTML = html;
+		return div.innerHTML;
+	}
+
+	// Tests taken from https://github.com/jquery/jquery/security/advisories/GHSA-jpcq-cgw6-v4j6
+	// Raw text inside an <option> must not be re-parsed in a <select> context
+	$div = jQuery("<div></div>").appendTo( fixture )
+		.html( "<option><style></option></select><img src=url404 onerror=xss(0)></style>" );
+	equal( $div.find("img").length, 0, "html(): no element injected out of an option" );
+	equal( $div.find("option > style").text(), "</option></select><img src=url404 onerror=xss(0)>",
+		"html(): style content inside an option kept intact" );
+
+	$div = jQuery("<div></div>").appendTo( fixture )
+		.append( "<optgroup><style></optgroup></select><img src=url404 onerror=xss(1)></style>" );
+	equal( $div.find("img").length, 0, "append(): no element injected out of an optgroup" );
+	equal( $div.find("optgroup > style").text(), "</optgroup></select><img src=url404 onerror=xss(1)>",
+		"append(): style content inside an optgroup kept intact" );
+
+	$nodes = jQuery( "<option><xmp></option></select><img src=url404 onerror=xss(2)></xmp>" );
+	equal( $nodes.length, 1, "jQuery( html ): only the option element is created" );
+	equal( $nodes.find("xmp").text(), "</option></select><img src=url404 onerror=xss(2)>",
+		"jQuery( html ): xmp content inside an option kept intact" );
+
+	$nodes = jQuery( jQuery.parseHTML( "<option><title></option></select><img src=url404 onerror=xss(3)></title>" ) );
+	equal( $nodes.length, 1, "jQuery.parseHTML(): only the option element is created" );
+	equal( $nodes.find("title").text(), "</option></select><img src=url404 onerror=xss(3)>",
+		"jQuery.parseHTML(): title content inside an option kept intact" );
+
+	// Where <option> parses outside of a select (all but IE<=9), markup starting
+	// with <option> or <optgroup> must be parsed in the same context as the
+	// browser parses it, i.e. without a <select> wrapper that a closing tag
+	// can break out of
+	optionParses = nativeHTML("<option></option>") !== "";
+	jQuery.each( [
+		"<option><style></option></select><img src=url404 onerror=xss(4)></style>",
+		"<option>a</option></select><b>b</b>",
+		"<optgroup label='a'><option>a</option></optgroup><select><option>b</option></select>"
+	], function( i, html ) {
+		if ( optionParses ) {
+			equal( jQuery("<div></div>").append( jQuery.parseHTML( html ) )[ 0 ].innerHTML,
+				nativeHTML( html ), "Parsed like the browser does, input: " + html );
+		} else {
+			ok( true, "<option> is wrapped in a select in this browser; input: " + html );
+		}
+	});
+
+	setTimeout(function() {
+		deepEqual( executed, [], "Insecure code wasn't executed" );
+		start();
+	}, 1000 );
+});
